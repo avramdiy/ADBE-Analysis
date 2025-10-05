@@ -19,6 +19,8 @@
 
  ### 3rd Commit
 
+- Added Bollinger Bands calculation and a `/tables/bbands` route that returns a PNG with three subplots visualizing bands for the early / mid / recent data splits to compare volatility and trend behavior across periods.
+
  ### 4th Commit
 
  ### 5th Commit

@@ -2,6 +2,11 @@ from flask import Flask, Response, jsonify, request
 import pandas as pd
 import os
 from typing import List
+import io
+import matplotlib
+# Use a non-interactive backend suitable for servers
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 app = Flask(__name__)
 
@@ -209,5 +214,73 @@ def tables_split_json():
 		return jsonify({part: splits[part].to_dict(orient="records")})
 	else:
 		return jsonify({"error": "unknown part"}), 400
+
+
+
+def compute_bbands(df: pd.DataFrame, n: int = 20, k: float = 2.0) -> pd.DataFrame:
+	"""Compute Bollinger Bands for a dataframe with a 'Close' column.
+
+	Returns a copy of df with added columns: MA, Upper, Lower, PercentB, BandWidth
+	"""
+	df = df.copy()
+	if "Close" not in df.columns:
+		return df
+
+	df["MA"] = df["Close"].rolling(window=n, min_periods=1).mean()
+	df["Std"] = df["Close"].rolling(window=n, min_periods=1).std(ddof=0)
+	df["Upper"] = df["MA"] + k * df["Std"]
+	df["Lower"] = df["MA"] - k * df["Std"]
+	df["PercentB"] = (df["Close"] - df["Lower"]) / (df["Upper"] - df["Lower"])
+	df["BandWidth"] = (df["Upper"] - df["Lower"]) / df["MA"]
+	return df
+
+
+@app.route("/tables/bbands", methods=["GET"])
+def tables_bbands_png():
+	"""Return a PNG image showing Bollinger Bands for early/mid/recent data.
+
+	Optional query params: n (window), k (std multiplier)
+	"""
+	try:
+		tables = read_tables_from_file(DATA_FILE_PATH)
+	except FileNotFoundError as e:
+		return jsonify({"error": str(e)}), 404
+	except Exception as e:
+		return jsonify({"error": f"Error reading tables: {e}"}), 500
+
+	if not tables:
+		return jsonify({"error": "No data found"}), 404
+
+	df = tables[0]
+	splits = split_into_terciles(df)
+
+	# Params
+	n = request.args.get("n", default=20, type=int)
+	k = request.args.get("k", default=2.0, type=float)
+
+	figs = []
+	fig, axes = plt.subplots(3, 1, figsize=(10, 9), sharex=False)
+	parts = ["early", "mid", "recent"]
+	for ax, part in zip(axes, parts):
+		part_df = splits[part]
+		if part_df.empty or "Close" not in part_df.columns:
+			ax.text(0.5, 0.5, f"No data for {part}", ha="center", va="center")
+			continue
+
+		bb = compute_bbands(part_df, n=n, k=k)
+		x = bb["Date"] if "Date" in bb.columns else range(len(bb))
+		ax.plot(x, bb["Close"], label="Close", color="black")
+		ax.plot(x, bb["MA"], label=f"MA({n})", color="blue")
+		ax.plot(x, bb["Upper"], label="Upper", color="red", linestyle="--")
+		ax.plot(x, bb["Lower"], label="Lower", color="green", linestyle="--")
+		ax.set_title(f"Bollinger Bands - {part}")
+		ax.legend(loc="best")
+
+	plt.tight_layout()
+	buf = io.BytesIO()
+	fig.savefig(buf, format="png")
+	plt.close(fig)
+	buf.seek(0)
+	return Response(buf.getvalue(), mimetype="image/png")
 
 
