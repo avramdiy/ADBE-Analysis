@@ -23,4 +23,6 @@
 
  ### 4th Commit
 
+- Added MACD calculation and a `/tables/macd` route that returns a PNG visualizing price and MACD (MACD line, signal, histogram) for the early / mid / recent splits to assess momentum across periods.
+
  ### 5th Commit

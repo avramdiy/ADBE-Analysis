@@ -284,3 +284,81 @@ def tables_bbands_png():
 	return Response(buf.getvalue(), mimetype="image/png")
 
 
+def compute_macd(df: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int = 9):
+	"""Compute MACD, signal, and histogram for a dataframe with 'Close'.
+
+	Returns a DataFrame with added columns 'MACD', 'Signal', 'Hist'.
+	"""
+	df = df.copy()
+	if "Close" not in df.columns:
+		return df
+
+	ema_fast = df["Close"].ewm(span=fast, adjust=False).mean()
+	ema_slow = df["Close"].ewm(span=slow, adjust=False).mean()
+	macd = ema_fast - ema_slow
+	signal_line = macd.ewm(span=signal, adjust=False).mean()
+	hist = macd - signal_line
+
+	df["MACD"] = macd
+	df["Signal"] = signal_line
+	df["Hist"] = hist
+	return df
+
+
+@app.route("/tables/macd", methods=["GET"])
+def tables_macd_png():
+	"""Return a PNG showing MACD plots for early/mid/recent splits.
+
+	Query params: fast, slow, signal (defaults 12,26,9)
+	"""
+	try:
+		tables = read_tables_from_file(DATA_FILE_PATH)
+	except FileNotFoundError as e:
+		return jsonify({"error": str(e)}), 404
+	except Exception as e:
+		return jsonify({"error": f"Error reading tables: {e}"}), 500
+
+	if not tables:
+		return jsonify({"error": "No data found"}), 404
+
+	df = tables[0]
+	splits = split_into_terciles(df)
+
+	fast = request.args.get("fast", default=12, type=int)
+	slow = request.args.get("slow", default=26, type=int)
+	signal = request.args.get("signal", default=9, type=int)
+
+	fig, axes = plt.subplots(3, 2, figsize=(12, 10), gridspec_kw={"width_ratios": [3, 1]})
+	parts = ["early", "mid", "recent"]
+	for row, part in enumerate(parts):
+		part_df = splits[part]
+		ax_price = axes[row][0]
+		ax_macd = axes[row][1]
+
+		if part_df.empty or "Close" not in part_df.columns:
+			ax_price.text(0.5, 0.5, f"No data for {part}", ha="center", va="center")
+			ax_macd.axis("off")
+			continue
+
+		macd_df = compute_macd(part_df, fast=fast, slow=slow, signal=signal)
+		x = macd_df["Date"] if "Date" in macd_df.columns else range(len(macd_df))
+
+		# Price plot on left
+		ax_price.plot(x, macd_df["Close"], color="black")
+		ax_price.set_title(f"Price - {part}")
+
+		# MACD on right: MACD, Signal, Hist
+		ax_macd.plot(x, macd_df["MACD"], label="MACD", color="blue")
+		ax_macd.plot(x, macd_df["Signal"], label="Signal", color="red")
+		ax_macd.bar(x, macd_df["Hist"], label="Hist", color="gray", alpha=0.6)
+		ax_macd.set_title(f"MACD - {part}")
+		ax_macd.legend()
+
+	plt.tight_layout()
+	buf = io.BytesIO()
+	fig.savefig(buf, format="png")
+	plt.close(fig)
+	buf.seek(0)
+	return Response(buf.getvalue(), mimetype="image/png")
+
+
