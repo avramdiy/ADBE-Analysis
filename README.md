@@ -26,3 +26,8 @@
 - Added MACD calculation and a `/tables/macd` route that returns a PNG visualizing price and MACD (MACD line, signal, histogram) for the early / mid / recent splits to assess momentum across periods.
 
  ### 5th Commit
+- Added RSI calculation and a `/tables/rsi` route that returns a PNG visualizing RSI (with 30/70 thresholds) alongside price for early / mid / recent splits to identify overbought/oversold regimes.
+
+### Summary
+
+- This project provides a small Flask API that loads historical Adobe (ADBE) price data, normalizes it (drops unused columns and parses dates), and splits the series into three time-based slices for analysis. It implements technical indicators and visualizations — Bollinger Bands, MACD, and RSI — each exposed as PNG endpoints to compare volatility, momentum, and overbought/oversold regimes across early, mid, and recent periods. The goal is to make exploratory technical analysis repeatable and programmatic so you can quickly inspect regime changes and test indicator-based hypotheses on consistent time slices. The endpoints also support basic parameterization (window sizes, multipliers) to experiment with different indicator settings.

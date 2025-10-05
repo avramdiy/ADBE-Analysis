@@ -362,3 +362,80 @@ def tables_macd_png():
 	return Response(buf.getvalue(), mimetype="image/png")
 
 
+def compute_rsi(df: pd.DataFrame, n: int = 14) -> pd.DataFrame:
+	"""Compute RSI (Relative Strength Index) for a dataframe with 'Close'.
+
+	Uses EMA smoothing similar to Wilder's RSI.
+	"""
+	df = df.copy()
+	if "Close" not in df.columns:
+		return df
+
+	delta = df["Close"].diff()
+	up = delta.clip(lower=0)
+	down = -delta.clip(upper=0)
+
+	ma_up = up.ewm(alpha=1 / n, adjust=False).mean()
+	ma_down = down.ewm(alpha=1 / n, adjust=False).mean()
+	rs = ma_up / ma_down
+	rsi = 100 - (100 / (1 + rs))
+
+	df["RSI"] = rsi
+	return df
+
+
+@app.route("/tables/rsi", methods=["GET"])
+def tables_rsi_png():
+	"""Return a PNG visualizing RSI for early/mid/recent splits.
+
+	Query param: n (RSI window, default 14)
+	"""
+	try:
+		tables = read_tables_from_file(DATA_FILE_PATH)
+	except FileNotFoundError as e:
+		return jsonify({"error": str(e)}), 404
+	except Exception as e:
+		return jsonify({"error": f"Error reading tables: {e}"}), 500
+
+	if not tables:
+		return jsonify({"error": "No data found"}), 404
+
+	df = tables[0]
+	splits = split_into_terciles(df)
+
+	n = request.args.get("n", default=14, type=int)
+
+	fig, axes = plt.subplots(3, 2, figsize=(12, 10), gridspec_kw={"width_ratios": [3, 1]})
+	parts = ["early", "mid", "recent"]
+	for row, part in enumerate(parts):
+		part_df = splits[part]
+		ax_price = axes[row][0]
+		ax_rsi = axes[row][1]
+
+		if part_df.empty or "Close" not in part_df.columns:
+			ax_price.text(0.5, 0.5, f"No data for {part}", ha="center", va="center")
+			ax_rsi.axis("off")
+			continue
+
+		rsi_df = compute_rsi(part_df, n=n)
+		x = rsi_df["Date"] if "Date" in rsi_df.columns else range(len(rsi_df))
+
+		# Price plot
+		ax_price.plot(x, rsi_df["Close"], color="black")
+		ax_price.set_title(f"Price - {part}")
+
+		# RSI plot
+		ax_rsi.plot(x, rsi_df["RSI"], color="purple")
+		ax_rsi.axhline(70, color="red", linestyle="--", linewidth=0.8)
+		ax_rsi.axhline(30, color="green", linestyle="--", linewidth=0.8)
+		ax_rsi.set_ylim(0, 100)
+		ax_rsi.set_title(f"RSI({n}) - {part}")
+
+	plt.tight_layout()
+	buf = io.BytesIO()
+	fig.savefig(buf, format="png")
+	plt.close(fig)
+	buf.seek(0)
+	return Response(buf.getvalue(), mimetype="image/png")
+
+
