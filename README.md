@@ -13,6 +13,10 @@
 
  ### 2nd Commit
 
+ - The date of the data starts at 1986-08-14, and ends at 2017-11-10.
+
+- Dropped the `OpenInt` column (not needed here) and split the main dataframe into three time-based objects (early / mid / recent) by terciles of the date range to capture regime changes over long history and make focused comparisons; implemented parsing and a `/tables/split` endpoint that returns these parts as JSON.
+
  ### 3rd Commit
 
  ### 4th Commit
